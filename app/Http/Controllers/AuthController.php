@@ -16,6 +16,20 @@ class AuthController extends Controller
             'password' => 'required',
         ]);
 
+        // Check local user existence and status first
+        $localUser = \App\Models\User::where('email', $request->email)->first();
+        if (!$localUser) {
+            return response()->json([
+                'message' => 'Usuario no registrado localmente en este sistema.'
+            ], 403);
+        }
+
+        if ($localUser->status !== 'activo') {
+            return response()->json([
+                'message' => 'Su cuenta está desactivada. Por favor, contacte a un administrador.'
+            ], 403);
+        }
+
         try {
             $response = Http::withoutVerifying()->post("{$this->baseUrl}/login", [
                 'email' => $request->email,
@@ -48,22 +62,29 @@ class AuthController extends Controller
     {
         $extUser = $data['user'];
 
-        // Find or create local user
-        $localUser = \App\Models\User::firstOrCreate(
-            ['email' => $extUser['email']],
-            [
-                'name' => $extUser['name'] ?? 'Usuario',
-                'apellido' => $extUser['apellido'] ?? '',
-                'dni' => $extUser['dni'] ?? null,
-                'avatar_url' => $extUser['avatar_url'] ?? null,
-            ]
-        );
+        // Find local user
+        $localUser = \App\Models\User::where('email', $extUser['email'])->first();
 
-        // Update avatar if it changed
+        if (!$localUser) {
+            return response()->json([
+                'message' => 'Usuario no registrado localmente en este sistema.'
+            ], 403);
+        }
+
+        if ($localUser->status !== 'activo') {
+            return response()->json([
+                'message' => 'Su cuenta está desactivada. Por favor, contacte a un administrador.'
+            ], 403);
+        }
+
+        // Update avatar if it changed or any other basic info
+        $localUser->name = $extUser['name'] ?? $localUser->name;
+        $localUser->apellido = $extUser['apellido'] ?? $localUser->apellido;
+        $localUser->dni = $extUser['dni'] ?? $localUser->dni;
         if ($localUser->avatar_url !== ($extUser['avatar_url'] ?? null)) {
             $localUser->avatar_url = $extUser['avatar_url'] ?? null;
-            $localUser->save();
         }
+        $localUser->save();
 
         // Create Sanctum Token locally
         $localToken = $localUser->createToken('auth_token')->plainTextToken;

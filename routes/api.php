@@ -21,6 +21,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/admin/local-roles', [AdminController::class, 'getLocalRoles']);
     Route::get('/admin/users', [AdminController::class, 'getUsers']);
     Route::post('/admin/users', [AdminController::class, 'createUser']);
+    Route::post('/admin/users/import', [AdminController::class, 'importUsers']);
     Route::put('/admin/users/{email}/role', [AdminController::class, 'updateRole'])->where('email', '.+');
     Route::get('/admin/coberturas', [CoberturaController::class, 'index']);
 
