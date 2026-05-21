@@ -68,6 +68,11 @@ class AuthController extends Controller
         // Create Sanctum Token locally
         $localToken = $localUser->createToken('auth_token')->plainTextToken;
 
+        // Store the BI access token in the cache keyed by the local user's ID
+        if (isset($data['access_token'])) {
+            \Illuminate\Support\Facades\Cache::put('bi_token_' . $localUser->id, $data['access_token'], now()->addMinutes(120));
+        }
+
         // Append local_role to response data
         $data['user']['local_role'] = $localUser->local_role;
         $data['local_access_token'] = $localToken;

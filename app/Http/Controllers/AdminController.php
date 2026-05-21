@@ -40,32 +40,25 @@ class AdminController extends Controller
 
     public function getUsers(Request $request)
     {
-        $biToken = $this->getBiToken();
+        $user = $request->user();
+        $biToken = \Illuminate\Support\Facades\Cache::get('bi_token_' . $user->id);
 
         if (!$biToken) {
-            return response()->json(['message' => 'No se pudo autenticar con el servidor BI'], 500);
+            return response()->json(['message' => 'No se pudo obtener el token de BI para el usuario logueado. Por favor, vuelva a iniciar sesión.'], 401);
         }
 
         $response = Http::withoutVerifying()->withToken($biToken)->get("{$this->baseUrl}/users");
 
         if (!$response->successful()) {
-            // Token may have expired - flush cache and retry once
-            \Illuminate\Support\Facades\Cache::forget('bi_admin_token');
-            $biToken = $this->getBiToken();
-            if ($biToken) {
-                $response = Http::withoutVerifying()->withToken($biToken)->get("{$this->baseUrl}/users");
-            }
-            if (!$response->successful()) {
-                return response()->json(['message' => 'Error fetching users from BI', 'detail' => $response->body()], 500);
-            }
+            return response()->json(['message' => 'Error al obtener usuarios de BI', 'detail' => $response->body()], $response->status());
         }
 
         $biData = $response->json();
         // Support both paginated { data: [...] } and plain array responses
         $biUsers = isset($biData['data']) ? $biData['data'] : $biData;
 
-        // 2. Fetch local users
-        $localUsers = User::all()->keyBy('email');
+        // 2. Fetch local users with roles relation
+        $localUsers = User::with('roles')->get()->keyBy('email');
 
         // 3. Merge
         $merged = [];
@@ -75,9 +68,11 @@ class AdminController extends Controller
 
             if ($local) {
                 $biUser['local_role'] = $local->local_role;
+                $biUser['local_roles'] = $local->roles->pluck('name')->toArray();
                 $biUser['status'] = 'activo';
             } else {
                 $biUser['local_role'] = null;
+                $biUser['local_roles'] = [];
                 $biUser['status'] = 'desactivado';
             }
             $merged[] = $biUser;
@@ -88,9 +83,13 @@ class AdminController extends Controller
 
     public function getRoles(Request $request)
     {
-        // El endpoint de roles en BI es público usualmente, o podemos pasar token por si acaso
         $response = Http::withoutVerifying()->get("{$this->baseUrl}/roles");
         return response()->json($response->json(), $response->status());
+    }
+
+    public function getLocalRoles(Request $request)
+    {
+        return response()->json(\App\Models\Role::orderBy('name')->get());
     }
 
     public function createUser(Request $request)
@@ -101,11 +100,20 @@ class AdminController extends Controller
             'dni' => 'required|string|max:20',
             'email' => 'required|string|email|max:255',
             'roles' => 'required|array',
-            'local_role' => 'nullable|string|in:Admin,Legales'
+            'local_roles' => 'nullable|array',
+            'local_roles.*' => 'string|in:Admin,Legales'
         ]);
 
+        $user = $request->user();
+        $biToken = \Illuminate\Support\Facades\Cache::get('bi_token_' . $user->id);
+
         // Registrar en BI
-        $biResponse = Http::withoutVerifying()->post("{$this->baseUrl}/register", [
+        $pendingRequest = Http::withoutVerifying();
+        if ($biToken) {
+            $pendingRequest = $pendingRequest->withToken($biToken);
+        }
+
+        $biResponse = $pendingRequest->post("{$this->baseUrl}/register", [
             'name' => $request->name,
             'apellido' => $request->apellido,
             'dni' => $request->dni,
@@ -120,14 +128,13 @@ class AdminController extends Controller
         $data = $biResponse->json();
         $extUser = $data['user'];
 
-        // Guardar localmente y asignar rol local
+        // Guardar localmente
         $localUser = User::firstOrCreate(
             ['email' => $extUser['email']],
             [
                 'name' => $extUser['name'],
                 'apellido' => $extUser['apellido'],
-                'dni' => $extUser['dni'],
-                'local_role' => $request->local_role
+                'dni' => $extUser['dni']
             ]
         );
 
@@ -135,12 +142,22 @@ class AdminController extends Controller
             $localUser->update([
                 'name' => $extUser['name'],
                 'apellido' => $extUser['apellido'],
-                'dni' => $extUser['dni'],
-                'local_role' => $request->local_role
+                'dni' => $extUser['dni']
             ]);
         }
 
+        // Sync local roles in DB
+        $localRoles = $request->input('local_roles', []);
+        $roleIds = \App\Models\Role::whereIn('name', $localRoles)->pluck('id')->toArray();
+        $localUser->roles()->sync($roleIds);
+
+        // Save local_role column as comma-separated string for backwards compatibility
+        $localUser->update([
+            'local_role' => implode(',', $localRoles)
+        ]);
+
         $extUser['local_role'] = $localUser->local_role;
+        $extUser['local_roles'] = $localRoles;
         $extUser['status'] = 'activo';
 
         return response()->json([
@@ -152,26 +169,28 @@ class AdminController extends Controller
     public function updateRole(Request $request, $email)
     {
         $request->validate([
-            'role' => 'nullable|string|in:Admin,Legales'
+            'roles' => 'nullable|array',
+            'roles.*' => 'string|in:Admin,Legales'
         ]);
 
-        // We find or create the local user just in case they were never logged in
         $localUser = User::firstOrCreate(
             ['email' => $email],
             [
                 'name' => $request->input('name', 'Usuario'),
-                'local_role' => $request->role,
             ]
         );
 
-        if (!$localUser->wasRecentlyCreated) {
-            $localUser->local_role = $request->role;
-            $localUser->save();
-        }
+        $rolesInput = $request->input('roles', []);
+        $roleIds = \App\Models\Role::whereIn('name', $rolesInput)->pluck('id')->toArray();
+        $localUser->roles()->sync($roleIds);
+
+        $localUser->local_role = implode(',', $rolesInput);
+        $localUser->save();
 
         return response()->json([
-            'message' => 'Rol actualizado',
-            'user' => $localUser
+            'message' => 'Roles locales actualizados',
+            'user' => $localUser,
+            'local_roles' => $rolesInput
         ]);
     }
 }
