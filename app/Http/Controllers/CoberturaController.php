@@ -13,6 +13,26 @@ class CoberturaController extends Controller
 {
     public function store(Request $request)
     {
+        // Map alias parameters to match target DB schema names
+        if ($request->has('poliza') && !$request->has('numero_poliza')) {
+            $request->merge(['numero_poliza' => $request->input('poliza')]);
+        }
+        if ($request->has('template') && !$request->has('templateid')) {
+            $request->merge(['templateid' => $request->input('template')]);
+        }
+        if ($request->has('adjunto') && !$request->has('attach1')) {
+            $request->merge(['attach1' => $request->input('adjunto')]);
+        }
+        if ($request->has('archivo') && !$request->has('src_file')) {
+            $request->merge(['src_file' => $request->input('archivo')]);
+        }
+        if ($request->has('grupo') && !$request->has('batch_id')) {
+            $request->merge(['batch_id' => $request->input('grupo')]);
+        }
+        if ($request->has('lote') && !$request->has('batch_id')) {
+            $request->merge(['batch_id' => $request->input('lote')]);
+        }
+
         $validated = $request->validate([
             'email' => 'required|string|max:255',
             'name' => 'nullable|string|max:255',
@@ -25,31 +45,105 @@ class CoberturaController extends Controller
             'dni' => 'nullable|string|max:50',
             'numero_poliza' => 'nullable|string|max:100',
             'fecha_vigencia' => 'nullable|string|max:100',
+            'src_file' => 'nullable|string|max:255',
+            'batch_id' => 'nullable|string|max:255',
         ]);
 
-        // Check if coverage is already accepted based on dni, numero_poliza, templateid, and attach1
-        $existing = CoberturaAceptada::where('dni', $validated['dni'] ?? null)
-            ->where('numero_poliza', $validated['numero_poliza'] ?? null)
-            ->where('templateid', $validated['templateid'] ?? null)
-            ->where('attach1', $validated['attach1'] ?? null)
-            ->first();
+        // Query stage_landing.dopler_confirmacion_raw in pgsql_gestion database to find matching record
+        try {
+            $db = DB::connection('pgsql_gestion');
 
-        if ($existing) {
+            $query = $db->table('stage_landing.dopler_confirmacion_raw')
+                ->where('email', $validated['email']);
+
+            if (!empty($validated['dni'])) {
+                $query->where('dni', $validated['dni']);
+            }
+            if (!empty($validated['numero_poliza'])) {
+                $query->where('numero_poliza', $validated['numero_poliza']);
+            }
+            if (!empty($validated['templateid'])) {
+                $query->where('templateid', $validated['templateid']);
+            }
+            if (!empty($validated['attach1'])) {
+                $query->where('attach1', $validated['attach1']);
+            }
+            if (!empty($validated['src_file'])) {
+                $query->where('src_file', $validated['src_file']);
+            }
+            if (!empty($validated['batch_id'])) {
+                $query->where('batch_id', $validated['batch_id']);
+            }
+
+            $record = $query->first();
+
+            if (!$record) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No se encontró ningún registro pendiente de cobertura que coincida con los datos proporcionados.'
+                ], 404);
+            }
+
+            $isAlreadyAccepted = $record->poliza_confirmada === true ||
+                $record->poliza_confirmada === 1 ||
+                $record->poliza_confirmada === '1' ||
+                $record->poliza_confirmada === 'true';
+
+            if ($isAlreadyAccepted) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Esta cobertura ya fue aceptada previamente.',
+                    'data' => [
+                        'created_at' => $record->confirmado_at ?? now()->toIso8String(),
+                        'nombre' => $record->nombre ?? $record->name,
+                        'dni' => $record->dni,
+                        'numero_poliza' => $record->numero_poliza,
+                        'fecha_vigencia' => $record->vigencia,
+                        'src_file' => $record->src_file,
+                        'batch_id' => $record->batch_id
+                    ],
+                    'already_accepted' => true
+                ], 200);
+            }
+
+            // Update the record to mark it as confirmed in PostgreSQL
+            $db->table('stage_landing.dopler_confirmacion_raw')
+                ->where('id_raw', $record->id_raw)
+                ->update([
+                    'poliza_confirmada' => true,
+                    'confirmado_at' => now()
+                ]);
+
+            // Retrieve updated timestamp
+            $updatedRecord = $db->table('stage_landing.dopler_confirmacion_raw')
+                ->where('id_raw', $record->id_raw)
+                ->first();
+
             return response()->json([
                 'success' => true,
-                'message' => 'Esta cobertura ya fue aceptada previamente.',
-                'data' => $existing,
-                'already_accepted' => true
-            ], 200);
+                'message' => 'Cobertura aceptada y registrada correctamente.',
+                'data' => [
+                    'created_at' => $updatedRecord->confirmado_at ?? now()->toIso8String(),
+                    'nombre' => $updatedRecord->nombre ?? $updatedRecord->name,
+                    'dni' => $updatedRecord->dni,
+                    'numero_poliza' => $updatedRecord->numero_poliza,
+                    'fecha_vigencia' => $updatedRecord->vigencia,
+                    'src_file' => $updatedRecord->src_file,
+                    'batch_id' => $updatedRecord->batch_id
+                ]
+            ], 201);
+
+        } catch (\Throwable $e) {
+            Log::error("Error processing store confirmation in pgsql_gestion", [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al registrar la conformidad en la base de datos: ' . $e->getMessage()
+            ], 500);
         }
-
-        $cobertura = CoberturaAceptada::create($validated);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Cobertura aceptada y registrada correctamente.',
-            'data' => $cobertura
-        ], 201);
     }
 
     public function index()

@@ -19,6 +19,8 @@ class CoberturaAceptada extends Model
         'nombre',
         'dni',
         'numero_poliza',
-        'fecha_vigencia'
+        'fecha_vigencia',
+        'src_file',
+        'batch_id'
     ];
 }
