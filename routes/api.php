@@ -24,6 +24,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/admin/users/import', [AdminController::class, 'importUsers']);
     Route::put('/admin/users/{email}/role', [AdminController::class, 'updateRole'])->where('email', '.+');
     Route::get('/admin/coberturas', [CoberturaController::class, 'index']);
+    Route::post('/admin/coberturas/upload-csv', [CoberturaController::class, 'uploadCsv']);
 
     Route::get('/user', function (Request $request) {
         return $request->user();
