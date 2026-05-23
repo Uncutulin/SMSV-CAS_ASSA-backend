@@ -99,6 +99,20 @@ return [
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
 
+        'pgsql_gestion' => [
+            'driver' => 'pgsql',
+            'host' => env('DB_PGSQL_HOST', '168.197.50.204'),
+            'port' => env('DB_PGSQL_PORT', '5432'),
+            'database' => env('DB_PGSQL_DATABASE', 'GestionDocumentacion'),
+            'username' => env('DB_PGSQL_USERNAME', 'smsv'),
+            'password' => env('DB_PGSQL_PASSWORD', 'i0i162qV33RG'),
+            'charset' => 'utf8',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'stage_landing,public',
+            'sslmode' => 'prefer',
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),
