@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\CoberturaController;
+use App\Http\Controllers\R2UploadController;
 
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
@@ -25,6 +26,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/admin/users/{email}/role', [AdminController::class, 'updateRole'])->where('email', '.+');
     Route::get('/admin/coberturas', [CoberturaController::class, 'index']);
     Route::post('/admin/coberturas/upload-csv', [CoberturaController::class, 'uploadCsv']);
+    Route::post('/admin/r2/presigned-urls', [R2UploadController::class, 'getPresignedUrls']);
+    Route::get('/admin/r2/existing-files', [R2UploadController::class, 'existingFiles']);
+    Route::post('/admin/r2/download-url', [R2UploadController::class, 'getDownloadUrl']);
 
     Route::get('/user', function (Request $request) {
         return $request->user();
