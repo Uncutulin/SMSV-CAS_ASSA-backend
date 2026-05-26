@@ -69,7 +69,8 @@ class CoberturaController extends Controller
                 $query->where('attach1', $validated['attach1']);
             }
             if (!empty($validated['src_file'])) {
-                $query->where('src_file', $validated['src_file']);
+                $cleanSrcFile = pathinfo($validated['src_file'], PATHINFO_FILENAME);
+                $query->where('src_file', $cleanSrcFile);
             }
             if (!empty($validated['batch_id'])) {
                 $query->where('batch_id', $validated['batch_id']);
@@ -205,6 +206,7 @@ class CoberturaController extends Controller
         $absolutePath = \Illuminate\Support\Facades\Storage::disk('local')->path($tempPath);
         $originalName = $file->getClientOriginalName();
 
+        $cleanName = pathinfo($originalName, PATHINFO_FILENAME);
         $rowsAffected = 0;
         $fallbackUsed = false;
 
@@ -222,6 +224,11 @@ class CoberturaController extends Controller
                 if (!empty($result)) {
                     $prop = 'load_dopler_confirmacion_csv';
                     $rowsAffected = $result[0]->$prop ?? 0;
+
+                    // Update the src_file to the clean filename without extension
+                    $db->table('stage_landing.dopler_confirmacion_raw')
+                        ->where('batch_id', $batchId)
+                        ->update(['src_file' => $cleanName]);
                 }
             } catch (\Throwable $spException) {
                 // If stored procedure fails (e.g. file is remote, permission issue, etc.),
@@ -271,8 +278,9 @@ class CoberturaController extends Controller
     private function parseAndInsertCsv($filePath, $batchId, $originalFileName, $db)
     {
         $rowsAffected = 0;
+        $cleanName = pathinfo($originalFileName, PATHINFO_FILENAME);
         
-        $db->transaction(function() use ($filePath, $batchId, $originalFileName, $db, &$rowsAffected) {
+        $db->transaction(function() use ($filePath, $batchId, $cleanName, $db, &$rowsAffected) {
             if (($handle = fopen($filePath, "r")) !== FALSE) {
                 // Read headers
                 $headers = fgetcsv($handle, 0, ";");
@@ -304,7 +312,7 @@ class CoberturaController extends Controller
 
                     $insertData = [
                         'batch_id' => $batchId,
-                        'src_file' => $originalFileName,
+                        'src_file' => $cleanName,
                         'src_system' => 'DOPLER',
                         'ingested_at' => now(),
                     ];
