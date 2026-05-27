@@ -69,7 +69,11 @@ class CoberturaController extends Controller
                 $query->where('attach1', $validated['attach1']);
             }
             if (!empty($validated['src_file'])) {
-                $cleanSrcFile = pathinfo($validated['src_file'], PATHINFO_FILENAME);
+                $cleanSrcFile = $validated['src_file'];
+                $extension = strtolower(pathinfo($cleanSrcFile, PATHINFO_EXTENSION));
+                if (in_array($extension, ['csv', 'txt'])) {
+                    $cleanSrcFile = pathinfo($cleanSrcFile, PATHINFO_FILENAME);
+                }
                 $query->where('src_file', $cleanSrcFile);
             }
             if (!empty($validated['batch_id'])) {
