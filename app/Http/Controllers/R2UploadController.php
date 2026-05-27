@@ -90,18 +90,22 @@ class R2UploadController extends Controller
     public function existingFiles(Request $request)
     {
         $request->validate([
-            'prefix' => 'required|string|max:1000',
+            'prefix' => 'nullable|string|max:1000',
         ]);
 
         $prefix = $request->input('prefix');
-        // Clean prefix to prevent directory traversal
-        $cleanPrefix = ltrim(str_replace(['..', '\\'], ['', '/'], $prefix), '/');
 
         try {
             $disk = Storage::disk('r2');
             
-            // List files within the prefix directory
-            $files = $disk->files($cleanPrefix);
+            if ($prefix === null || $prefix === '') {
+                // Return all files recursively from the bucket
+                $files = $disk->allFiles();
+            } else {
+                // Clean prefix to prevent directory traversal
+                $cleanPrefix = ltrim(str_replace(['..', '\\'], ['', '/'], $prefix), '/');
+                $files = $disk->files($cleanPrefix);
+            }
 
             return response()->json([
                 'success' => true,
@@ -109,7 +113,7 @@ class R2UploadController extends Controller
             ]);
         } catch (\Throwable $e) {
             Log::error('Error listing R2 existing files', [
-                'prefix' => $cleanPrefix,
+                'prefix' => $prefix ?? 'root',
                 'message' => $e->getMessage()
             ]);
 
