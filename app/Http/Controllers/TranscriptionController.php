@@ -82,6 +82,12 @@ class TranscriptionController extends Controller
             $pythonPath = env('PYTHON_PATH', 'python');
             $scriptPath = base_path('app/Python/transcribe.py');
 
+            // Asegurar que el directorio de caché de Whisper exista y sea escribible
+            $whisperCachePath = storage_path('app/whisper_cache');
+            if (!file_exists($whisperCachePath)) {
+                @mkdir($whisperCachePath, 0775, true);
+            }
+
             // Asegurar que el subproceso herede variables de entorno críticas de Windows
             // (como SystemRoot, windir) para evitar errores de sockets y DLLs (WinError 10106).
             $systemEnv = [
@@ -90,6 +96,7 @@ class TranscriptionController extends Controller
                 'PATH' => getenv('PATH'),
                 'TEMP' => getenv('TEMP') ?: sys_get_temp_dir(),
                 'TMP' => getenv('TMP') ?: sys_get_temp_dir(),
+                'XDG_CACHE_HOME' => $whisperCachePath,
             ];
             $envVariables = array_merge($_SERVER, $_ENV, $systemEnv);
 

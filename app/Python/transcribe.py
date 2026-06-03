@@ -81,8 +81,34 @@ def main():
         warnings.filterwarnings("ignore", category=UserWarning)
 
         # 1. Cargamos 'medium' que demostró entender perfecto el audio telefónico.
+        # Validamos si la ruta de cache es escribible; de lo contrario, usamos el directorio temporal del sistema.
+        import tempfile
+        download_root = None
+        
+        # Ruta de caché por defecto de Whisper
+        default_cache = os.path.join(os.path.expanduser("~"), ".cache", "whisper")
+        xdg_cache = os.environ.get("XDG_CACHE_HOME")
+        if xdg_cache:
+            default_cache = os.path.join(xdg_cache, "whisper")
+            
+        try:
+            os.makedirs(default_cache, exist_ok=True)
+            test_file = os.path.join(default_cache, ".write_test")
+            with open(test_file, "w") as f:
+                f.write("test")
+            os.remove(test_file)
+            download_root = default_cache
+        except Exception:
+            # Fallback a directorio temporal del sistema si hay error de permisos (ej. Errno 13)
+            temp_dir = tempfile.gettempdir()
+            download_root = os.path.join(temp_dir, "whisper_cache")
+            try:
+                os.makedirs(download_root, exist_ok=True)
+            except Exception:
+                download_root = temp_dir
+
         # 'device="cuda"' fuerza el uso de la GPU Nvidia que configuramos antes para ir a fondo.
-        model = whisper.load_model("medium", device="cuda")
+        model = whisper.load_model("medium", device="cuda", download_root=download_root)
         
         # 2. Parámetros óptimos para evitar arrastre de errores y saltear silencios pesados
         opciones = {
