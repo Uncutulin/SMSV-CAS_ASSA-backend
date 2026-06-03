@@ -20,6 +20,8 @@ class TranscriptionController extends Controller
      */
     public function upload(Request $request)
     {
+        @set_time_limit(600);
+
         $request->validate([
             'file' => 'required|file|mimes:mp3,wav,ogg,m4a,aac,flac|max:50000', // max 50MB
         ]);

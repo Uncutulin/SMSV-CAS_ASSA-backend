@@ -107,8 +107,10 @@ def main():
             except Exception:
                 download_root = temp_dir
 
-        # 'device="cuda"' fuerza el uso de la GPU Nvidia que configuramos antes para ir a fondo.
-        model = whisper.load_model("medium", device="cuda", download_root=download_root)
+        # Seleccionar dispositivo (GPU/CUDA si está disponible, de lo contrario CPU)
+        import torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model = whisper.load_model("medium", device=device, download_root=download_root)
         
         # 2. Parámetros óptimos para evitar arrastre de errores y saltear silencios pesados
         opciones = {
