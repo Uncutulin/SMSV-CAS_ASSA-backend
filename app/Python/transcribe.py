@@ -73,11 +73,13 @@ def main():
     # Limpiar el prefijo temporal de Laravel si existe (ej. audio_1780490925_)
     filename = re.sub(r'^audio_\d+_(.+)$', r'\1', filename)
 
-    # Intento de transcripción real usando la librería whisper de OpenAI
+    # Intento de transcripción real usando la librería faster_whisper optimizada para CPU
     try:
-        import whisper
+        from faster_whisper import WhisperModel
+        import torch
         import warnings
-        # Ignorar advertencias de fp16 en CPU o específicas de PyTorch
+        
+        # Ignorar advertencias específicas de PyTorch/ejecución
         warnings.filterwarnings("ignore", category=UserWarning)
 
         # 1. Configurar ruta de caché estricta dentro del Storage de Laravel
@@ -90,37 +92,52 @@ def main():
         os.makedirs(download_root, exist_ok=True)
 
         # Seleccionar dispositivo (GPU/CUDA si está disponible, de lo contrario CPU)
-        import torch
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        whisper_model = os.environ.get("WHISPER_MODEL", "medium")
         
-        # Carga del modelo forzando la ruta interna del proyecto
-        model = whisper.load_model(whisper_model, device=device, download_root=download_root)
+        # Leemos el modelo del .env (por defecto usará 'small' si no se especifica)
+        whisper_model = os.environ.get("WHISPER_MODEL", "small")
         
-        # 2. Parámetros óptimos para evitar arrastre de errores y saltear silencios pesados
-        opciones = {
-            "language": "es",
-            "condition_on_previous_text": False,
-            "no_speech_threshold": 0.5
-        }
+        # Carga optimizada del modelo. 
+        # compute_type="int8" reduce a la mitad el uso de RAM y CPU sin perder precisión
+        model = WhisperModel(
+            whisper_model, 
+            device=device, 
+            compute_type="int8", 
+            download_root=download_root
+        )
         
-        result = model.transcribe(audio_path, **opciones)
+        # 2. Configurar parámetros óptimos de transcripción
+        # beam_size=5 asegura una búsqueda precisa de las palabras
+        # condition_on_previous_text=False previene repeticiones y arrastre de errores
+        segments, info = model.transcribe(
+            audio_path, 
+            language="es", 
+            beam_size=5,
+            condition_on_previous_text=False
+        )
         
-        # 3. Filtrar y sanitizar el output text
-        texto_final = limpiar_texto_completo(result["text"])
+        # Unificar los fragmentos detectados por fragmento de tiempo
+        texto_acumulado = []
+        for segment in segments:
+            texto_acumulado.append(segment.text)
+            
+        texto_raw = " ".join(texto_acumulado)
+        
+        # 3. Filtrar y sanitizar el output text final
+        texto_final = limpiar_texto_completo(texto_raw)
         
         # Devolver el texto limpio de verdad para la base de datos
         print(texto_final)
         sys.exit(0)
 
     except ImportError:
-        # Fallback si no está instalada la librería whisper
+        # Fallback si no está instalada la librería faster-whisper
         print(f"[TRANSCRIPCIÓN SIMULADA] Llamada grabada en el archivo '{filename}'. "
-              f"Este es un texto de prueba simulado porque la librería 'whisper' de Python no está instalada en este entorno. "
-              f"Para habilitar transcripciones reales, ejecute: pip install openai-whisper")
+              f"Este es un texto de prueba simulado porque la librería 'faster-whisper' de Python no está instalada en este entorno. "
+              f"Para habilitar transcripciones reales, ejecute: pip install faster-whisper --break-system-packages")
         sys.exit(0)
     except Exception as e:
-        # Fallback ante cualquier otro error
+        # Fallback ante cualquier otro error del motor
         print(f"[ERROR DE TRANSCRIPCIÓN] Ocurrió un error al procesar el archivo '{filename}': {str(e)}")
         sys.exit(0)
 
