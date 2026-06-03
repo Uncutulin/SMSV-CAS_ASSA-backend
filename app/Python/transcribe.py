@@ -80,37 +80,21 @@ def main():
         # Ignorar advertencias de fp16 en CPU o específicas de PyTorch
         warnings.filterwarnings("ignore", category=UserWarning)
 
-        # 1. Cargamos 'medium' que demostró entender perfecto el audio telefónico.
-        # Validamos si la ruta de cache es escribible; de lo contrario, usamos el directorio temporal del sistema.
-        import tempfile
-        download_root = None
+        # 1. Configurar ruta de caché estricta dentro del Storage de Laravel
+        # Subimos dos niveles desde app/Python para llegar a la raíz del backend (SMSV-CAS_ASSA-backend)
+        ruta_script = os.path.dirname(os.path.abspath(__file__))
+        raiz_proyecto = os.path.abspath(os.path.join(ruta_script, "..", ".."))
+        download_root = os.path.join(raiz_proyecto, "storage", "app", "whisper_cache")
         
-        # Ruta de caché por defecto de Whisper
-        default_cache = os.path.join(os.path.expanduser("~"), ".cache", "whisper")
-        xdg_cache = os.environ.get("XDG_CACHE_HOME")
-        if xdg_cache:
-            default_cache = os.path.join(xdg_cache, "whisper")
-            
-        try:
-            os.makedirs(default_cache, exist_ok=True)
-            test_file = os.path.join(default_cache, ".write_test")
-            with open(test_file, "w") as f:
-                f.write("test")
-            os.remove(test_file)
-            download_root = default_cache
-        except Exception:
-            # Fallback a directorio temporal del sistema si hay error de permisos (ej. Errno 13)
-            temp_dir = tempfile.gettempdir()
-            download_root = os.path.join(temp_dir, "whisper_cache")
-            try:
-                os.makedirs(download_root, exist_ok=True)
-            except Exception:
-                download_root = temp_dir
+        # Forzar la creación de la carpeta dentro de tu estructura de proyecto
+        os.makedirs(download_root, exist_ok=True)
 
         # Seleccionar dispositivo (GPU/CUDA si está disponible, de lo contrario CPU)
         import torch
         device = "cuda" if torch.cuda.is_available() else "cpu"
         whisper_model = os.environ.get("WHISPER_MODEL", "medium")
+        
+        # Carga del modelo forzando la ruta interna del proyecto
         model = whisper.load_model(whisper_model, device=device, download_root=download_root)
         
         # 2. Parámetros óptimos para evitar arrastre de errores y saltear silencios pesados
