@@ -6,6 +6,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\CoberturaController;
 use App\Http\Controllers\R2UploadController;
+use App\Http\Controllers\TranscriptionController;
 
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
@@ -29,6 +30,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/admin/r2/presigned-urls', [R2UploadController::class, 'getPresignedUrls']);
     Route::get('/admin/r2/existing-files', [R2UploadController::class, 'existingFiles']);
     Route::post('/admin/r2/download-url', [R2UploadController::class, 'getDownloadUrl']);
+
+    Route::post('/admin/transcriptions/upload', [TranscriptionController::class, 'upload']);
+    Route::get('/admin/transcriptions', [TranscriptionController::class, 'index']);
+    Route::delete('/admin/transcriptions/{id}', [TranscriptionController::class, 'destroy']);
 
     Route::get('/user', function (Request $request) {
         return $request->user();
