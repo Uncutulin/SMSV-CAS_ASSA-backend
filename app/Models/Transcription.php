@@ -17,5 +17,6 @@ class Transcription extends Model
         'call_time_argentina',
         'call_index',
         'transcription',
+        'status',
     ];
 }
