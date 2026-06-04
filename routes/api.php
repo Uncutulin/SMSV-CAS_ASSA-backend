@@ -33,6 +33,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::post('/admin/transcriptions/upload', [TranscriptionController::class, 'upload']);
     Route::get('/admin/transcriptions', [TranscriptionController::class, 'index']);
+    Route::get('/admin/transcriptions/{id}', [TranscriptionController::class, 'show']);
     Route::delete('/admin/transcriptions/{id}', [TranscriptionController::class, 'destroy']);
 
     Route::get('/user', function (Request $request) {

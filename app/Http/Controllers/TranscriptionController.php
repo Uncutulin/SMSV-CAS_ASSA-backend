@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 use App\Models\Transcription;
 use Carbon\Carbon;
 use Symfony\Component\Process\Process;
+use App\Jobs\ProcessTranscription;
 
 class TranscriptionController extends Controller
 {
@@ -76,62 +77,6 @@ class TranscriptionController extends Controller
 
         // Store file temporarily inside local disk
         $tempPath = $file->storeAs('tmp_audio', 'audio_' . time() . '_' . $originalName);
-        $absolutePath = Storage::disk('local')->path($tempPath);
-
-        $transcriptionText = '';
-
-        try {
-            $pythonPath = env('PYTHON_PATH', 'python');
-            $scriptPath = base_path('app/Python/transcribe.py');
-
-            // Asegurar que el directorio de caché de Whisper exista y sea escribible
-            $whisperCachePath = storage_path('app/whisper_cache');
-            if (!file_exists($whisperCachePath)) {
-                @mkdir($whisperCachePath, 0775, true);
-            }
-
-            // Asegurar que el subproceso herede variables de entorno críticas de Windows
-            // (como SystemRoot, windir) para evitar errores de sockets y DLLs (WinError 10106).
-            $systemEnv = [
-                'SystemRoot' => getenv('SystemRoot') ?: 'C:\\Windows',
-                'windir' => getenv('windir') ?: 'C:\\Windows',
-                'PATH' => getenv('PATH'),
-                'TEMP' => getenv('TEMP') ?: sys_get_temp_dir(),
-                'TMP' => getenv('TMP') ?: sys_get_temp_dir(),
-                'XDG_CACHE_HOME' => $whisperCachePath,
-            ];
-            $envVariables = array_merge($_SERVER, $_ENV, $systemEnv);
-
-            // Set up process with a 300 second timeout for potentially large files
-            $process = new Process([$pythonPath, $scriptPath, $absolutePath], null, $envVariables);
-            $process->setTimeout(300);
-            $process->run();
-
-            if (!$process->isSuccessful()) {
-                Log::error("Fallo al ejecutar el script de transcripción Python", [
-                    'filename' => $originalName,
-                    'error' => $process->getErrorOutput(),
-                    'exit_code' => $process->getExitCode()
-                ]);
-                $transcriptionText = "[Error de transcripción] El motor de transcripción reportó un error durante la ejecución. Verifique el entorno del servidor.";
-            } else {
-                $transcriptionText = trim($process->getOutput());
-                if (!mb_check_encoding($transcriptionText, 'UTF-8')) {
-                    $transcriptionText = mb_convert_encoding($transcriptionText, 'UTF-8', 'UTF-8');
-                }
-            }
-        } catch (\Throwable $e) {
-            Log::error("Excepción durante la ejecución de transcribe.py", [
-                'filename' => $originalName,
-                'error' => $e->getMessage()
-            ]);
-            $transcriptionText = "[Error de sistema] No se pudo ejecutar el script de transcripción. Detalle: " . $e->getMessage();
-        } finally {
-            // Always clean up the local temp file
-            if (Storage::disk('local')->exists($tempPath)) {
-                Storage::disk('local')->delete($tempPath);
-            }
-        }
 
         try {
             // Save to database
@@ -142,23 +87,32 @@ class TranscriptionController extends Controller
                 'call_time_utc' => $callTimeUtc,
                 'call_time_argentina' => $callTimeArgentina,
                 'call_index' => $callIndex,
-                'transcription' => $transcriptionText,
+                'transcription' => null,
+                'status' => 'pending',
             ]);
+
+            // Dispatch job to transcribe audio in the background
+            ProcessTranscription::dispatch($transcription, $tempPath);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Audio procesado y transcripción registrada con éxito.',
+                'message' => 'Audio subido correctamente. Procesando transcripción en segundo plano.',
                 'data' => $transcription
-            ], 201);
+            ], 202);
 
         } catch (\Throwable $e) {
-            Log::error('Error saving transcription to database', [
+            // Clean up the local temp file if database creation or dispatch fails
+            if (Storage::disk('local')->exists($tempPath)) {
+                Storage::disk('local')->delete($tempPath);
+            }
+
+            Log::error('Error starting transcription process', [
                 'filename' => $originalName,
                 'error' => $e->getMessage()
             ]);
             return response()->json([
                 'success' => false,
-                'message' => 'Error al guardar la transcripción en la base de datos: ' . $e->getMessage()
+                'message' => 'Error al iniciar el proceso de transcripción: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -239,6 +193,40 @@ class TranscriptionController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error al eliminar la transcripción: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get a single transcription status/data.
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function show($id)
+    {
+        try {
+            $transcription = Transcription::find($id);
+
+            if (!$transcription) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Transcripción no encontrada.'
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $transcription
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Error fetching single transcription', [
+                'id' => $id,
+                'error' => $e->getMessage()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener la transcripción: ' . $e->getMessage()
             ], 500);
         }
     }
