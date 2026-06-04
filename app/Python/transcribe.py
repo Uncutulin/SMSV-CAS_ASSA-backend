@@ -33,12 +33,12 @@ def preprocesar_audio(input_path):
     temp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
     temp_wav.close() # Liberar el archivo para que FFmpeg pueda escribir
     
-    # Comando de FFmpeg para forzar el formato nativo de Whisper de alta fidelidad
+    # Comando de FFmpeg con la ruta absoluta para el usuario www-data
     comando = [
-        'ffmpeg', '-y', '-i', input_path,
+        '/usr/bin/ffmpeg', '-y', '-i', input_path,
         '-ar', '16000',  # 16kHz Sample Rate
         '-ac', '1',      # Mono canal
-        '-c:a', 'pcm_s16le', # Codec de audio crudo sin pérdidas
+        '-c:a', 'pcm_s16le', # Codec sin pérdidas
         temp_wav.name
     ]
     
