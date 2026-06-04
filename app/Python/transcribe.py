@@ -35,7 +35,13 @@ DICCIONARIO_CORRECCIONES = [
     (r"\bFaola\b", "Fabiola"),
     (r"\bgenarmería\b", "Gendarmería"),
     (r"\bGenarmería\b", "Gendarmería"),
+    # Ajustes de modismos y palabras cortadas
+    (r"\baguardadnos\b", "aguardame"),
+    (r"\baguardad\b", "aguardá"),
     (r"\babueras\b", "aguardas"),
+    (r"\bDal\b", "Dale"),
+    # Corrección quirúrgica de la frase de los 11 segundos
+    (r"sin más por los 11 segunditos", "si me aguardás un segundito"),
     # Correcciones institucionales para la mutual
     (r"\bdesde\s+el\s+sociedad\s+militar\b", "desde la Sociedad Militar"),
     (r"\bsociedad\s+militar\b", "Sociedad Militar")
